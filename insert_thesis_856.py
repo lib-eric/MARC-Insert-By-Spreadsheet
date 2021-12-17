@@ -1,42 +1,35 @@
 from tkinter import filedialog
 from pathlib import Path
+import datetime
 from openpyxl import load_workbook
-from pandas import ExcelFile
 from pymarc import MARCReader, Record, Field
 
 
-def spreadsheet_lookup_dict(lookup_file_path=None, search_string=""):
+def spreadsheet_lookup_dict(lookup_file_path=None):
+    tmp_dict = {}
     return_dict = None
-
-    try:
-        xls = ExcelFile(lookup_file_path)
-
-        return_dict = xls.parse(xls.sheet_names[0])
-    except:
-        print("There was an issue reading or parsing xlsx")
-        exit()
-
-    return return_dict
-
-
-def spreadsheet_lookup(lookup_file_path=None, search_string=""):
-    return_val = None
 
     wb = load_workbook(lookup_file_path)
     ws = wb.active
 
-    col_idx = 0
-
     for row in range(1, ws.max_row + 1):
-        cell_value = ws[row][col_idx].value
+        tmp_dict[str(ws[row][0].value)] = str(ws[row][1].value)
+        print(row)
 
-        if cell_value == search_string:
-            return_val = ws[row][1].value
-            return return_val
-    return return_val
+    if len(tmp_dict) > 0:
+        return_dict = tmp_dict
+
+    print(f"Distinct Records in Look up Dict: {len(return_dict)}")
+
+    return return_dict
 
 
 def process_marc(marc_file_path=None, output_file_path=None, lookup_file_path=None):
+    # Load spreadsheet into dict for faster searching.
+    spreadsheet_dict = spreadsheet_lookup_dict(
+        lookup_file_path=lookup_file_path
+    )
+
     # Read the MARC File (mf)
     with open(marc_file_path, 'rb') as mf:
         reader = MARCReader(mf)
@@ -48,22 +41,25 @@ def process_marc(marc_file_path=None, output_file_path=None, lookup_file_path=No
             print(f_001)
 
             # Get 856s to loop through to update/create
-            for f_856 in record.get_fields('856'):
-                # u_856 = f_856['u'].data
-                u_856 = f_856['u']
-                print(u_856)
+            if record.get_fields('856'):
+                for f_856 in record.get_fields('856'):
+                    # u_856 = f_856['u'].data
+                    u_856 = f_856['u']
+                    print(u_856)
 
-                # Check to make sure it is the handle.
-                if 'hdl.handle.net' in u_856:
-                    # Remove field if matched:
-                    record.remove_field(f_856)
+                    # Check to make sure it is the handle.
+                    if u_856:
+                        if 'hdl.handle.net' in u_856:
+                            # Remove field if matched:
+                            record.remove_field(f_856)
 
-            # Add field based on data from lookup.
-            new_856 = spreadsheet_lookup(
-                lookup_file_path=lookup_file_path,
-                search_string=f_001
-            )
+            # Default no new 856 in case no result found.
+            new_856 = None
+            # Look up link in dict to get link.
+            if f_001 in spreadsheet_dict.keys():
+                new_856 = spreadsheet_dict[f_001]
 
+            # If result found create the 856 with found link.
             if new_856:
                 record.add_field(
                     Field(
@@ -79,6 +75,7 @@ def process_marc(marc_file_path=None, output_file_path=None, lookup_file_path=No
             # Write changes to new output file.
             with open(output_file_path, 'ab') as out:
                 out.write(record.as_marc())
+                out.close()
 
 
 def main():
@@ -92,7 +89,12 @@ def main():
     marc_file_path = Path(mrc.name)
 
     # Establish output MARC file.
-    output_file_path = Path.joinpath(marc_file_path.parent.absolute(), 'output.mrc')
+    # Set file name equal to now YYYY-MM-DD_HH-MM
+    dt_now = datetime.datetime.now()
+    output_file_path = Path.joinpath(
+        marc_file_path.parent.absolute(),
+        f"output__{dt_now.year}-{dt_now.month}-{dt_now.day}_{dt_now.hour}-{dt_now.minute}.mrc"
+    )
 
     # Get spreadsheet with identifier and value to insert.
     lookup = filedialog.askopenfile(title="Select the Lookup Spreadsheet")
