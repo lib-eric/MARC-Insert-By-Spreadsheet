@@ -1,15 +1,22 @@
 from tkinter import filedialog
 from pathlib import Path
 from openpyxl import load_workbook
-# from openpyxl.workbook import Workbook
+from pandas import ExcelFile
 from pymarc import MARCReader, Record, Field
 
 
-# def lookup_col_index(ws, search_string, col_idx=1):
-#     for row in range(1, ws.max_row + 1):
-#         if ws[row][col_idx].value == search_string:
-#             return col_idx, row
-#     return col_idx, None
+def spreadsheet_lookup_dict(lookup_file_path=None, search_string=""):
+    return_dict = None
+
+    try:
+        xls = ExcelFile(lookup_file_path)
+
+        return_dict = xls.parse(xls.sheet_names[0])
+    except:
+        print("There was an issue reading or parsing xlsx")
+        exit()
+
+    return return_dict
 
 
 def spreadsheet_lookup(lookup_file_path=None, search_string=""):
